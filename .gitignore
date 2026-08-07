@@ -6,3 +6,4 @@ data/
 *.db-shm
 start.command
 .DS_Store
+public/_BEELDEN/Overige/*.pdf

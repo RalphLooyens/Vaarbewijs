@@ -20,3 +20,6 @@ db.exec(schema);
 // Helper: maak prepare compatible met better-sqlite3 API
 // node:sqlite prepare() returns statements with .run()/.get()/.all()
 module.exports = db;
+
+// Migraties voor bestaande databases
+try { db.exec("ALTER TABLE link_users ADD COLUMN blocked INTEGER DEFAULT 0"); } catch(e) {}

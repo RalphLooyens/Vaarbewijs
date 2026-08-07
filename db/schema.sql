@@ -101,6 +101,7 @@ CREATE TABLE IF NOT EXISTS link_users (
   code        TEXT PRIMARY KEY,
   name        TEXT NOT NULL,
   expires_at  TEXT NOT NULL DEFAULT (datetime('now', '+90 days')),
+  blocked     INTEGER DEFAULT 0,
   created_at  TEXT DEFAULT (datetime('now'))
 );
 
@@ -111,3 +112,11 @@ CREATE TABLE IF NOT EXISTS link_progress (
 );
 
 CREATE INDEX IF NOT EXISTS idx_link_expires ON link_users(expires_at);
+
+CREATE TABLE IF NOT EXISTS link_referrals (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  referrer_code TEXT NOT NULL REFERENCES link_users(code) ON DELETE CASCADE,
+  friend_name  TEXT NOT NULL,
+  friend_info  TEXT,
+  created_at   TEXT DEFAULT (datetime('now'))
+);
