@@ -23,15 +23,14 @@ app.get('/api/health', (req, res) => res.json({ ok: true, ts: new Date().toISOSt
 // ── Gebruiker ophalen via code ────────────────────────────────
 app.get('/api/user/:code', (req, res) => {
   const user = db.prepare(`
-    SELECT code, name, expires_at,
-           CAST((julianday(expires_at) - julianday('now')) AS INTEGER) AS days_left
-    FROM link_users WHERE code = ?
+    SELECT code, name, expires_at FROM link_users WHERE code = ?
   `).get(req.params.code);
 
-  if (!user)            return res.status(404).json({ error: 'Niet gevonden' });
-  if (user.days_left < 0) return res.status(410).json({ error: 'Link verlopen', expired: true, name: user.name });
+  if (!user) return res.status(404).json({ error: 'Niet gevonden' });
+  const days_left = Math.floor((new Date(user.expires_at).getTime() - Date.now()) / 86400000);
+  if (days_left < 0) return res.status(410).json({ error: 'Link verlopen', expired: true, name: user.name });
 
-  res.json(user);
+  res.json({ ...user, days_left });
 });
 
 // ── Voortgang synchroniseren ──────────────────────────────────
@@ -68,14 +67,18 @@ function requireAdmin(req, res, next) {
 
 // ── Admin: gebruikers ophalen ─────────────────────────────────
 app.get('/api/admin/users', requireAdmin, (req, res) => {
-  const users = db.prepare(`
+  const rows = db.prepare(`
     SELECT u.code, u.name, u.expires_at, u.created_at,
-           CAST((julianday(u.expires_at) - julianday('now')) AS INTEGER) AS days_left,
            p.updated_at AS last_sync
     FROM link_users u
     LEFT JOIN link_progress p ON u.code = p.code
     ORDER BY u.created_at DESC
   `).all();
+  const now = Date.now();
+  const users = rows.map(u => ({
+    ...u,
+    days_left: Math.floor((new Date(u.expires_at).getTime() - now) / 86400000)
+  }));
   res.json(users);
 });
 
@@ -111,9 +114,9 @@ app.patch('/api/admin/users/:code/extend', requireAdmin, (req, res) => {
   `).run(validDays, req.params.code);
 
   const updated = db.prepare(`
-    SELECT expires_at, CAST((julianday(expires_at) - julianday('now')) AS INTEGER) AS days_left
-    FROM link_users WHERE code = ?
+    SELECT expires_at FROM link_users WHERE code = ?
   `).get(req.params.code);
+  updated.days_left = Math.floor((new Date(updated.expires_at).getTime() - Date.now()) / 86400000);
 
   res.json({ ok: true, expires_at: updated.expires_at, days_left: updated.days_left });
 });
