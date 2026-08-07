@@ -1,113 +1,141 @@
 require('dotenv').config();
-const express      = require('express');
-const cookieParser = require('cookie-parser');
-const cors         = require('cors');
-const path         = require('path');
-const bcrypt       = require('bcryptjs');
-const { v4: uuid } = require('uuid');
+const express = require('express');
+const path    = require('path');
+const db      = require('./db/database');
 
-const db           = require('./db/database');
-const authRoutes   = require('./routes/auth');
-const progressRoutes = require('./routes/progress');
-const adminRoutes  = require('./routes/admin');
+const app           = express();
+const PORT          = process.env.PORT || 3000;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 
-const app  = express();
-const PORT = process.env.PORT || 3000;
-
-// ── Middleware ────────────────────────────────────────────────
-app.use(cors({ origin: true, credentials: true }));
-app.use(express.json({ limit: '5mb' }));
-app.use(cookieParser());
-
-// ── API routes ────────────────────────────────────────────────
-app.use('/api/auth',     authRoutes);
-app.use('/api/progress', progressRoutes);
-app.use('/api/admin',    adminRoutes);
+app.use(express.json({ limit: '10mb' }));
 
 // ── Statische bestanden ───────────────────────────────────────
 app.use('/admin', express.static(path.join(__dirname, 'admin')));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ── Quiz route (vereist ingelogd zijn) ────────────────────────
-app.get('/quiz', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'quiz.html'));
+// ── Hoofd-routes ──────────────────────────────────────────────
+app.get('/quiz', (req, res) => res.sendFile(path.join(__dirname, 'public', 'quiz.html')));
+app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'admin', 'index.html')));
+app.get('/admin/*', (req, res) => res.sendFile(path.join(__dirname, 'admin', 'index.html')));
+app.get('/',  (req, res) => res.redirect('/quiz'));
+app.get('/api/health', (req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
+
+// ── Gebruiker ophalen via code ────────────────────────────────
+app.get('/api/user/:code', (req, res) => {
+  const user = db.prepare(`
+    SELECT code, name, expires_at,
+           CAST((julianday(expires_at) - julianday('now')) AS INTEGER) AS days_left
+    FROM link_users WHERE code = ?
+  `).get(req.params.code);
+
+  if (!user)            return res.status(404).json({ error: 'Niet gevonden' });
+  if (user.days_left < 0) return res.status(410).json({ error: 'Link verlopen', expired: true, name: user.name });
+
+  res.json(user);
 });
 
-// ── Admin panel ───────────────────────────────────────────────
-app.get('/admin', (req, res) => {
-  res.sendFile(path.join(__dirname, 'admin', 'index.html'));
-});
-app.get('/admin/*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'admin', 'index.html'));
+// ── Voortgang synchroniseren ──────────────────────────────────
+app.post('/api/sync', (req, res) => {
+  const { code, data } = req.body;
+  if (!code || !data) return res.status(400).json({ error: 'code en data vereist' });
+
+  const user = db.prepare(
+    "SELECT code FROM link_users WHERE code = ? AND expires_at > datetime('now')"
+  ).get(code);
+  if (!user) return res.status(404).json({ error: 'Gebruiker niet gevonden of link verlopen' });
+
+  db.prepare(`
+    INSERT INTO link_progress (code, data, updated_at) VALUES (?, ?, datetime('now'))
+    ON CONFLICT(code) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at
+  `).run(code, typeof data === 'string' ? data : JSON.stringify(data));
+
+  res.json({ ok: true });
 });
 
-// ── Root redirect ─────────────────────────────────────────────
-app.get('/', (req, res) => res.redirect('/quiz'));
-app.get('/api/health', (req, res) => res.json({ ok: true }));
+app.get('/api/sync/:code', (req, res) => {
+  const row = db.prepare('SELECT data, updated_at FROM link_progress WHERE code = ?').get(req.params.code);
+  if (!row) return res.json({ data: null });
+  try { res.json({ data: JSON.parse(row.data), updated_at: row.updated_at }); }
+  catch(e) { res.json({ data: null }); }
+});
 
-// ── Eerste keer: admin-account aanmaken als er nog geen is ────
-function ensureAdmin() {
-  const existing = db.prepare("SELECT id FROM users WHERE role = 'admin' LIMIT 1").get();
-  if (!existing) {
-    const email = process.env.ADMIN_EMAIL || 'admin@vaarbewijs.be';
-    const pass  = process.env.ADMIN_PASSWORD || 'Admin1234!';
-    const hash  = bcrypt.hashSync(pass, 10);
-    db.prepare('INSERT INTO users (id,name,email,password_hash,role) VALUES (?,?,?,?,?)')
-      .run(uuid(), 'Beheerder', email, hash, 'admin');
-    console.log(`\n✅ Admin aangemaakt: ${email} / ${pass}`);
-    console.log('⚠️  Wijzig het wachtwoord na je eerste login!\n');
-  }
+// ── Admin middleware ──────────────────────────────────────────
+function requireAdmin(req, res, next) {
+  const key = req.headers['x-admin-key'];
+  if (key !== ADMIN_PASSWORD) return res.status(401).json({ error: 'Geen toegang' });
+  next();
 }
 
-ensureAdmin();
-
-app.listen(PORT, () => {
-  console.log(`\n🚢 Vaarbewijs server draait op http://localhost:${PORT}`);
-  console.log(`   Quiz:        http://localhost:${PORT}/quiz`);
-  console.log(`   Admin panel: http://localhost:${PORT}/admin\n`);
+// ── Admin: gebruikers ophalen ─────────────────────────────────
+app.get('/api/admin/users', requireAdmin, (req, res) => {
+  const users = db.prepare(`
+    SELECT u.code, u.name, u.expires_at, u.created_at,
+           CAST((julianday(u.expires_at) - julianday('now')) AS INTEGER) AS days_left,
+           p.updated_at AS last_sync
+    FROM link_users u
+    LEFT JOIN link_progress p ON u.code = p.code
+    ORDER BY u.created_at DESC
+  `).all();
+  res.json(users);
 });
 
-// ── Magic link (uitnodigingslink) ─────────────────────────────
-app.get('/invite/:token', (req, res) => {
-  const jwt    = require('jsonwebtoken');
-  const { v4: uid } = require('uuid');
+// ── Admin: gebruiker aanmaken ─────────────────────────────────
+app.post('/api/admin/users', requireAdmin, (req, res) => {
+  const { name, days } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: 'Naam vereist' });
 
-  const row = db.prepare(
-    "SELECT * FROM invite_tokens WHERE token=? AND used=0 AND expires_at > datetime('now')"
-  ).get(req.params.token);
+  const validDays = Math.min(Math.max(parseInt(days) || 90, 1), 730);
+  const code = generateCode();
 
-  if (!row) return res.send(`
-    <html><body style="font-family:sans-serif;text-align:center;padding:60px">
-    <h2>❌ Link ongeldig of verlopen</h2>
-    <p>Contacteer de beheerder voor een nieuwe link.</p>
-    </body></html>`);
+  db.prepare(`
+    INSERT INTO link_users (code, name, expires_at)
+    VALUES (?, ?, datetime('now', '+' || ? || ' days'))
+  `).run(code, name.trim(), validDays);
 
-  const user = db.prepare('SELECT * FROM users WHERE id=?').get(row.user_id);
-  if (!user || user.role === 'blocked') return res.send(`
-    <html><body style="font-family:sans-serif;text-align:center;padding:60px">
-    <h2>❌ Account niet beschikbaar</h2></body></html>`);
+  res.json({ code, name: name.trim(), days: validDays });
+});
 
-  // Token als gebruikt markeren
-  db.prepare('UPDATE invite_tokens SET used=1 WHERE token=?').run(row.token);
+// ── Admin: link verlengen ─────────────────────────────────────
+app.patch('/api/admin/users/:code/extend', requireAdmin, (req, res) => {
+  const { days } = req.body;
+  const validDays = Math.min(Math.max(parseInt(days) || 90, 1), 730);
 
-  // Sessie aanmaken
-  const sessionId = uid();
-  db.prepare('INSERT INTO sessions (id, user_id, ip, user_agent) VALUES (?,?,?,?)')
-    .run(sessionId, user.id, req.ip, req.headers['user-agent']);
-  db.prepare("INSERT INTO activity_log (id, user_id, action, ip) VALUES (?,?,?,?)")
-    .run(uid(), user.id, 'login', req.ip);
-  db.prepare("UPDATE users SET last_seen = datetime('now') WHERE id=?").run(user.id);
+  const user = db.prepare('SELECT code, expires_at FROM link_users WHERE code = ?').get(req.params.code);
+  if (!user) return res.status(404).json({ error: 'Niet gevonden' });
 
-  // JWT cookie zetten
-  const token = jwt.sign(
-    { id: user.id, email: user.email, name: user.name, role: user.role, sessionId },
-    process.env.JWT_SECRET,
-    { expiresIn: '7d' }
-  );
-  res.cookie('vb_token', token, {
-    httpOnly: true, sameSite: 'lax',
-    maxAge: 7*24*60*60*1000,
-    secure: process.env.NODE_ENV === 'production'
-  });
-  res.redirect('/quiz');
+  // Verleng vanuit vandaag of huidige vervaldatum (whichever is later)
+  db.prepare(`
+    UPDATE link_users
+    SET expires_at = datetime(MAX(expires_at, datetime('now')), '+' || ? || ' days')
+    WHERE code = ?
+  `).run(validDays, req.params.code);
+
+  const updated = db.prepare(`
+    SELECT expires_at, CAST((julianday(expires_at) - julianday('now')) AS INTEGER) AS days_left
+    FROM link_users WHERE code = ?
+  `).get(req.params.code);
+
+  res.json({ ok: true, expires_at: updated.expires_at, days_left: updated.days_left });
+});
+
+// ── Admin: gebruiker verwijderen ──────────────────────────────
+app.delete('/api/admin/users/:code', requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM link_users WHERE code = ?').run(req.params.code);
+  res.json({ ok: true });
+});
+
+// ── Hulpfunctie: unieke code genereren ───────────────────────
+function generateCode() {
+  const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
+  let code;
+  do {
+    code = Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+  } while (db.prepare('SELECT 1 FROM link_users WHERE code = ?').get(code));
+  return code;
+}
+
+app.listen(PORT, () => {
+  console.log(`\n🚢 Vaarbewijs server op http://localhost:${PORT}`);
+  console.log(`   Quiz:  http://localhost:${PORT}/quiz`);
+  console.log(`   Admin: http://localhost:${PORT}/admin\n`);
 });

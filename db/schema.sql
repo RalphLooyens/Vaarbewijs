@@ -92,3 +92,22 @@ CREATE TABLE IF NOT EXISTS invite_tokens (
   created_at TEXT DEFAULT (datetime('now')),
   expires_at TEXT DEFAULT (datetime('now', '+20 days'))
 );
+
+-- ─────────────────────────────────────────────────────────────
+-- VEREENVOUDIGD LINK-SYSTEEM (vervangt email/wachtwoord)
+-- ─────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS link_users (
+  code        TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,
+  expires_at  TEXT NOT NULL DEFAULT (datetime('now', '+90 days')),
+  created_at  TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS link_progress (
+  code        TEXT PRIMARY KEY REFERENCES link_users(code) ON DELETE CASCADE,
+  data        TEXT NOT NULL DEFAULT '{}',
+  updated_at  TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_link_expires ON link_users(expires_at);
