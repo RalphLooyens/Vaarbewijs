@@ -272,6 +272,20 @@ function renderUsers(users) {
       ? 'Actief: ' + new Date(u.last_sync + 'Z').toLocaleDateString('nl-BE', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})
       : 'Nog niet gebruikt';
     const added = new Date(u.created_at + 'Z').toLocaleDateString('nl-BE', {day:'numeric',month:'long',year:'numeric'});
+    // Voortgang berekenen uit opgeslagen data
+    var cats = 0, totalCorrect = 0, totalVragen = 0;
+    if(u.progress_data){
+      try{
+        var pd = typeof u.progress_data === 'string' ? JSON.parse(u.progress_data) : u.progress_data;
+        if(pd.correct){ cats = Object.keys(pd.correct).filter(function(k){ return pd.correct[k]>0; }).length; }
+        if(pd.fouten && pd.correct){
+          Object.keys(pd.correct).forEach(function(k){ totalCorrect += (pd.correct[k]||0); totalVragen += (pd.correct[k]||0) + (pd.fouten[k]||0); });
+        }
+      }catch(e){}
+    }
+    var progressStr = cats > 0
+      ? cats + ' categorieën · ' + totalCorrect + '/' + totalVragen + ' correct'
+      : 'Nog geen oefeningen';
 
     return `
     <div class="user-card" id="card-${u.code}">
@@ -280,6 +294,7 @@ function renderUsers(users) {
         <div class="user-meta">
           <span>${lastSync}</span>
           <span>Toegevoegd ${added}</span>
+          <span style="color:#007AFF">${progressStr}</span>
         </div>
       </div>
       <span class="days-badge ${badgeCls}">${badgeLbl}</span>

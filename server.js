@@ -69,7 +69,7 @@ function requireAdmin(req, res, next) {
 app.get('/api/admin/users', requireAdmin, (req, res) => {
   const rows = db.prepare(`
     SELECT u.code, u.name, u.expires_at, u.created_at,
-           p.updated_at AS last_sync
+           p.updated_at AS last_sync, p.data AS progress_data
     FROM link_users u
     LEFT JOIN link_progress p ON u.code = p.code
     ORDER BY u.created_at DESC
