@@ -177,6 +177,58 @@
   .act-day .act-bar { width: 70%; border-radius: 4px 4px 0 0; background: var(--blue); min-height: 3px; transition: height .5s; }
   .act-day .act-count { font-size: 11px; color: var(--text); font-weight: 600; margin-top: 3px; }
 
+
+  /* ── Referral notification ───────────────── */
+  #referral-notif {
+    display:none; position:fixed; top:72px; right:20px; z-index:200;
+    background:var(--card); border-radius:18px; padding:20px 22px;
+    width:min(340px, calc(100vw - 40px));
+    box-shadow:0 8px 40px rgba(0,0,0,0.22); border-left:5px solid var(--green);
+  }
+  #referral-notif.visible { display:block; animation:slideIn .3s ease; }
+  @keyframes slideIn { from{opacity:0;transform:translateY(-12px)} to{opacity:1;transform:translateY(0)} }
+  .rn-header { font-size:11px; font-weight:700; color:var(--green); text-transform:uppercase; letter-spacing:.05em; margin-bottom:8px; }
+  .rn-name  { font-size:19px; font-weight:700; color:var(--text); margin-bottom:4px; }
+  .rn-phone { font-size:18px; font-weight:700; color:var(--blue); font-family:monospace; letter-spacing:.04em; margin-bottom:4px; }
+  .rn-from  { font-size:12px; color:var(--sub); margin-bottom:14px; }
+  .rn-actions { display:flex; gap:8px; }
+  /* ── User detail modal ───────────────────── */
+  #detail-modal {
+    display:none; position:fixed; inset:0; z-index:150;
+    background:rgba(0,0,0,.5); align-items:flex-start; justify-content:center;
+    padding:20px; overflow-y:auto;
+  }
+  #detail-modal.open { display:flex; }
+  .detail-box {
+    background:var(--card); border-radius:20px; width:min(580px,100%);
+    margin:auto; box-shadow:0 12px 60px rgba(0,0,0,.25); overflow:hidden;
+  }
+  .detail-header {
+    padding:22px 24px 18px; border-bottom:1px solid var(--border);
+    display:flex; justify-content:space-between; align-items:flex-start; gap:12px;
+  }
+  .detail-name { font-size:20px; font-weight:700; margin-bottom:4px; }
+  .detail-meta { font-size:13px; color:var(--sub); }
+  .detail-body { padding:20px 24px; max-height:72vh; overflow-y:auto; }
+  .detail-close { background:var(--bg); border:none; border-radius:50%; width:32px; height:32px; cursor:pointer; font-size:15px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .detail-stats { display:flex; gap:10px; margin-bottom:20px; }
+  .dstat { flex:1; background:var(--bg); border-radius:12px; padding:12px 10px; text-align:center; }
+  .dstat-val { font-size:22px; font-weight:700; line-height:1; }
+  .dstat-lbl { font-size:11px; color:var(--sub); margin-top:3px; }
+  .les-row { margin-bottom:16px; }
+  .les-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+  .les-naam { font-size:13px; font-weight:700; }
+  .les-pct  { font-size:13px; font-weight:600; }
+  .les-bar-wrap { height:7px; background:var(--bg); border-radius:4px; overflow:hidden; margin-bottom:8px; }
+  .les-bar-fill { height:100%; border-radius:4px; transition:width .5s; }
+  .cat-row { display:flex; align-items:center; gap:10px; padding:4px 0; }
+  .cat-naam { flex:1; font-size:12px; color:var(--sub); }
+  .cat-bar-wrap { width:100px; height:4px; background:#F2F2F7; border-radius:2px; overflow:hidden; }
+  .cat-bar-fill { height:100%; border-radius:2px; }
+  .cat-pct { width:32px; text-align:right; font-weight:600; color:var(--text); font-size:11px; }
+  .btn-detail { background:#F2F2F7; color:var(--blue); }
+  .btn-detail:hover { background:#E5E5EA; }
+
 </style>
 </head>
 <body>
@@ -322,10 +374,68 @@
   </div>
 </div>
 
+
+<!-- ── REFERRAL NOTIFICATION ──────────────────────── -->
+<div id="referral-notif">
+  <div class="rn-header">🤝 Nieuwe doorverwijzing!</div>
+  <div class="rn-name" id="rn-name">—</div>
+  <div class="rn-phone" id="rn-phone">—</div>
+  <div class="rn-from" id="rn-from">—</div>
+  <div class="rn-actions">
+    <button class="btn btn-sm btn-green" onclick="goToDoorverwijzingen()">Bekijk →</button>
+    <button class="btn btn-sm btn-outline" onclick="closeReferralNotif()">Sluiten</button>
+  </div>
+</div>
+
+<!-- ── USER DETAIL MODAL ────────────────────────── -->
+<div id="detail-modal">
+  <div class="detail-box">
+    <div class="detail-header">
+      <div>
+        <div class="detail-name" id="detail-name">—</div>
+        <div class="detail-meta" id="detail-meta">—</div>
+      </div>
+      <button class="detail-close" onclick="closeDetail()">✕</button>
+    </div>
+    <div class="detail-body" id="detail-body"></div>
+  </div>
+</div>
+
 <script>
 const BASE = window.location.origin;
 let adminKey = '';
 let extendCode = '';
+
+// ── apiFetch helper ───────────────────────────────────────────
+async function apiFetch(path, opts = {}) {
+  const res = await fetch(BASE + path, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', 'x-admin-key': adminKey, ...(opts.headers || {}) }
+  });
+  try { return await res.json(); } catch(e) { return null; }
+}
+
+// ── Gebruikers cache ──────────────────────────────────────────
+let allUsers = [];
+
+// ── LESSEN_MAP (14 hoofdstukken) ──────────────────────────────
+const LESSEN_MAP = [
+  {id:"les0",naam:"H01 – Vaarbewijs",cats:[{id:"1.1",naam:"Beperkt Stuurbrevet"},{id:"1.2",naam:"Scheepvaartverkeerswet (SVW) en Binnenvaartwet (BVW)"},{id:"1.3",naam:"BPR – Inleiding"},{id:"1.4",naam:"BPR – Kentekens & Bemanning"}]},
+  {id:"les1",naam:"H02 – Veiligheid",cats:[{id:"2.1",naam:"Brandpreventie"},{id:"2.2",naam:"Reddingsmiddelen"},{id:"2.3",naam:"Veiligheidsvoorzieningen"},{id:"2.4",naam:"EHBO"}]},
+  {id:"les6",naam:"H03 – Techniek en Onderhoud",cats:[{id:"3.1",naam:"Motoren"},{id:"3.2",naam:"Elektriciteit"},{id:"3.3",naam:"Koeling"},{id:"3.4",naam:"Aandrijving"},{id:"3.5",naam:"Milieu en Pollutie"}]},
+  {id:"les7",naam:"H04 – Manoeuvreren",cats:[{id:"4.1",naam:"Sturen en roerwerking"},{id:"4.2",naam:"Schroef en roerwerking"},{id:"4.3",naam:"Aankomen en afvaren"}]},
+  {id:"les8",naam:"H05 – Bijzondere omstandigheden",cats:[{id:"5.1",naam:"Varen in nauw en ondiep water"},{id:"5.2",naam:"Slepen en gesleept worden"},{id:"5.3",naam:"Ankeren en Aanmeren"},{id:"5.4",naam:"Sluizen en schutten"}]},
+  {id:"les9",naam:"H06 – Verkeerstekens en Markering",cats:[{id:"6.1",naam:"Verbodsborden"},{id:"6.2",naam:"Gebodsborden"},{id:"6.3",naam:"Beperkingen en Aanbevelingen"},{id:"6.4",naam:"Aanwijzingstekens"},{id:"6.5",naam:"Sluizen, Lichten en Bruggen"},{id:"6.6",naam:"Laterale Betonning"},{id:"6.7",naam:"Cardinale Betonning"}]},
+  {id:"les10",naam:"H07 – Vaarregels",cats:[{id:"7.1",naam:"Voorrangsregels"},{id:"7.2",naam:"Voorrangsregels Vervolg"},{id:"7.3",naam:"Regels voor Engtes"},{id:"7.4",naam:"Bijzondere Bepalingen"},{id:"7.5",naam:"Gemeenschappelijke Maas en Kanaal Brussel-Schelde"},{id:"7.6",naam:"Verkeerde wal varen"},{id:"7.7",naam:"Rijnvaartpolitiereglement (RPR)"}]},
+  {id:"les11",naam:"H08 – Lichten en Dagmerken",cats:[{id:"8.1",naam:"Kleine Schepen"},{id:"8.2",naam:"Grote Schepen"},{id:"8.3",naam:"Grote Schepen Deel 2"},{id:"8.4",naam:"Bijzondere Lichten"},{id:"8.5",naam:"Geluidsseinen"}]},
+  {id:"les16",naam:"H09 – Reglement",cats:[{id:"9.1",naam:"Bepalingen ter Voorkoming van Aanvaringen op Zee 1"},{id:"9.2",naam:"Bepaling ter voorkoming van aanvaring op zee 2"},{id:"9.3",naam:"Bepaling ter voorkoming van aanvaring op zee 3"},{id:"9.4",naam:"Scheepvaartreglement Beneden-Zeeschelde (BenZee)"},{id:"9.5",naam:"Politiereglement Beneden-Zeeschelde"},{id:"9.6",naam:"Scheepvaartreglement Kanaal Gent-Terneuzen (SRKGT)"},{id:"9.7",naam:"Politie- en Kustvaartreglement Belgische Kust"},{id:"9.8",naam:"Scheepvaartreglement Westerschelde"}]},
+  {id:"les18",naam:"H10 – Betonning en Oeverlichten",cats:[{id:"10.1",naam:"Betonning"},{id:"10.2",naam:"Oeverlichten"}]},
+  {id:"les19",naam:"H11 – Kaarten en Symbolen",cats:[{id:"11.1",naam:"Kaarten en Symbolen"},{id:"11.2",naam:"Plaatsbepaling"},{id:"11.3",naam:"Navigatie met Satellieten"},{id:"11.4",naam:"Koersbepaling Nederlandse kaart"},{id:"11.5",naam:"Koersbepaling Belgische kaart"}]},
+  {id:"les20",naam:"H12 – Koersformule en Peilingen",cats:[{id:"12.1",naam:"Het Kompas"},{id:"12.2",naam:"Koersformule 1"},{id:"12.4",naam:"Koersformule 2 — Stroom en Drift"},{id:"12.5",naam:"Koersformule 2 Nederlandse Kaart"},{id:"12.6",naam:"Peilingen Nederlandse Kaart"}]},
+  {id:"les13",naam:"H13 – Meteorologie",cats:[{id:"13.1",naam:"Elementaire Meteorologie"},{id:"13.2",naam:"Wind en Wolken"},{id:"13.3",naam:"Weersvoorspelling"}]},
+  {id:"les17",naam:"H14 – Getijden",cats:[{id:"14.1",naam:"Springtij en Doodtij"},{id:"14.2",naam:"Reductievlak, Rijzing en Diepteberekening"},{id:"14.3",naam:"Horizontale Getijdenbeweging en Stroomtafel"}]},
+];
+
 
 // ── Auth ─────────────────────────────────────────────────────
 async function doLogin() {
@@ -359,6 +469,7 @@ async function doLogin() {
   document.getElementById('app').style.display = 'block';
   const users = await res.json();
   renderUsers(users);
+  initReferralPolling();
 }
 
 function doLogout() {
@@ -382,6 +493,7 @@ async function loadUsers() {
 
 // ── Render ────────────────────────────────────────────────────
 function renderUsers(users) {
+  allUsers = users;
   const list = document.getElementById('user-list');
   const cnt  = document.getElementById('user-count');
   const title = document.getElementById('list-title');
@@ -441,9 +553,10 @@ function renderUsers(users) {
         <button class="copy-btn" onclick="copyLink('${esc(link)}')" title="Kopieer link">⎘</button>
       </div>
       <div class="user-actions">
-        <button class="btn btn-sm btn-orange" onclick="openExtend('${u.code}','${esc(u.name)}')">⏱ Verlengen</button>
+        <button class="btn btn-sm btn-detail" onclick="openDetail('${u.code}')">&#x1F4CA; Detail</button>
+        <button class="btn btn-sm btn-orange" onclick="openExtend('${u.code}','${esc(u.name)}')">&#x23F1; Verlengen</button>
         <button class="btn btn-sm ${u.blocked ? 'btn-green' : 'btn-gray'}" onclick="toggleBlock('${u.code}','${esc(u.name)}',${u.blocked?1:0})">${u.blocked ? '🔓 Deblokkeer' : '🔒 Blokkeer'}</button>
-        <button class="btn btn-sm btn-red" onclick="deleteUser('${u.code}','${esc(u.name)}')">✕</button>
+        <button class="btn btn-sm btn-red" onclick="deleteUser('${u.code}','${esc(u.name)}')">&#x2715;</button>
       </div>
     </div>`;
   }).join('');
@@ -511,21 +624,20 @@ async function confirmExtend() {
 // ── Doorverwijzingen ─────────────────────────────────────────────────────────
 async function loadReferrals() {
   const el = document.getElementById('referral-list');
-  if (!el) return;
   const rows = await apiFetch('/api/admin/referrals');
-  // Toon badge op nav-tab
-  const tabBtns = document.querySelectorAll('.tab-btn');
-  tabBtns.forEach(function(btn){ if(btn.textContent.includes('Doorverwijzingen')){ btn.querySelector('.ref-badge') && btn.querySelector('.ref-badge').remove(); if(rows && rows.length > 0){ const b=document.createElement('span'); b.className='ref-badge'; b.style.cssText='background:#FF3B30;color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:6px;font-weight:700;'; b.textContent=rows.length; btn.appendChild(b); }}});
+  updateReferralBadge(rows || []);
+  if (!el) return;
   if (!rows || rows.length === 0) {
     el.innerHTML = '<p style="color:#8E8E93;font-size:14px">Geen doorverwijzingen.</p>';
     return;
   }
   el.innerHTML = rows.map(r => {
     const date = new Date(r.created_at + 'Z').toLocaleDateString('nl-BE', {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'});
+    const phone = r.friend_info ? ' · 📱 ' + esc(r.friend_info) : '';
     return `<div class="referral-card">
       <div class="referral-info">
         <div class="referral-name">${esc(r.friend_name)}</div>
-        <div class="referral-meta">Voorgesteld door ${esc(r.referrer_name)}${r.friend_info ? ' · ' + esc(r.friend_info) : ''} · ${date}</div>
+        <div class="referral-meta">Voorgesteld door ${esc(r.referrer_name)}${phone} · ${date}</div>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
         <button class="btn btn-sm btn-green" onclick="addFromReferral('${esc(r.friend_name)}')">+ Voeg toe</button>
@@ -685,6 +797,7 @@ function relTime(dateStr) {
       document.getElementById('app').style.display = 'block';
       const users = await res.json();
       renderUsers(users);
+      initReferralPolling();
       return;
     }
   }
@@ -694,6 +807,9 @@ function relTime(dateStr) {
 // Extend modal sluiten via overlay
 document.getElementById('extend-modal').addEventListener('click', e => {
   if (e.target === document.getElementById('extend-modal')) closeExtend();
+});
+document.getElementById('detail-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('detail-modal')) closeDetail();
 });
 
 async function uploadPDF(input, filename) {
@@ -719,6 +835,142 @@ async function uploadPDF(input, filename) {
   };
   reader.readAsDataURL(file);
 }
+
+// ── User detail modal ─────────────────────────────────────────
+function openDetail(code) {
+  const u = allUsers.find(x => x.code === code);
+  if (!u) return;
+  document.getElementById('detail-name').textContent = u.name;
+  const lastSync = u.last_sync
+    ? 'Actief: ' + new Date(u.last_sync + 'Z').toLocaleDateString('nl-BE', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})
+    : 'Nog niet gebruikt';
+  document.getElementById('detail-meta').textContent = lastSync + (u.days_left > 0 ? ' \xb7 ' + u.days_left + ' dgn geldig' : ' \xb7 Verlopen');
+
+  const body = document.getElementById('detail-body');
+  if (!u.progress_data) {
+    body.innerHTML = '<p style="color:var(--sub);text-align:center;padding:40px 0;font-size:14px">Nog geen oefeningen gedaan.</p>';
+    document.getElementById('detail-modal').classList.add('open');
+    return;
+  }
+  let pd;
+  try { pd = typeof u.progress_data === 'string' ? JSON.parse(u.progress_data) : u.progress_data; }
+  catch(e) { body.innerHTML = '<p style="color:red">Data kan niet geladen worden.</p>'; document.getElementById('detail-modal').classList.add('open'); return; }
+
+  const voortgang = pd.voortgang || {};
+  const fouten    = pd.fouten   || {};
+  const correct   = pd.correct  || {};
+
+  const totalCorrect = Object.values(correct).reduce((a,b) => a+(b||0), 0);
+  const foutCount = Object.keys(fouten).length;
+  const catVals = Object.values(voortgang).filter(v => v > 0);
+  const avgVoortgang = catVals.length ? Math.round(catVals.reduce((a,b) => a+b,0)/catVals.length) : 0;
+
+  const foutenPerCat = {};
+  for (const [, q] of Object.entries(fouten)) {
+    const cat = q && q.code ? q.code.split('.').slice(0,2).join('.') : null;
+    if (cat) foutenPerCat[cat] = (foutenPerCat[cat] || 0) + 1;
+  }
+
+  let html = '<div class="detail-stats">' +
+    '<div class="dstat"><div class="dstat-val">' + totalCorrect + '</div><div class="dstat-lbl">Correct</div></div>' +
+    '<div class="dstat"><div class="dstat-val" style="color:var(--blue)">' + avgVoortgang + '%</div><div class="dstat-lbl">Gemiddeld</div></div>' +
+    '<div class="dstat"><div class="dstat-val" style="color:var(--red)">' + foutCount + '</div><div class="dstat-lbl">Te oefenen</div></div>' +
+  '</div>';
+
+  let hasAny = false;
+  for (const les of LESSEN_MAP) {
+    const catPcts = les.cats.map(c => voortgang[c.id] || 0);
+    const lesAvg  = catPcts.length ? Math.round(catPcts.reduce((a,b) => a+b,0)/catPcts.length) : 0;
+    const hasActivity = catPcts.some(p => p > 0);
+    if (!hasActivity) continue;
+    hasAny = true;
+    const barColor = lesAvg >= 70 ? 'var(--green)' : lesAvg >= 40 ? 'var(--blue)' : 'var(--orange)';
+    html += '<div class="les-row">' +
+      '<div class="les-header">' +
+        '<div class="les-naam">' + esc(les.naam) + '</div>' +
+        '<div class="les-pct" style="color:' + barColor + '">' + lesAvg + '%</div>' +
+      '</div>' +
+      '<div class="les-bar-wrap"><div class="les-bar-fill" style="width:' + lesAvg + '%;background:' + barColor + '"></div></div>';
+    for (const cat of les.cats) {
+      const pct  = voortgang[cat.id] || 0;
+      const fout = foutenPerCat[cat.id] || 0;
+      if (pct === 0 && fout === 0) continue;
+      const cc = pct >= 70 ? 'var(--green)' : pct >= 40 ? 'var(--blue)' : 'var(--orange)';
+      html += '<div class="cat-row">' +
+        '<div class="cat-naam">' + esc(cat.naam) + (fout > 0 ? ' <span style="color:var(--red);font-size:11px">\xb7 ' + fout + ' ✗</span>' : '') + '</div>' +
+        '<div class="cat-bar-wrap"><div class="cat-bar-fill" style="width:' + pct + '%;background:' + cc + '"></div></div>' +
+        '<div class="cat-pct">' + pct + '%</div>' +
+      '</div>';
+    }
+    html += '</div>';
+  }
+  if (!hasAny) html = '<p style="color:var(--sub);text-align:center;padding:40px 0;font-size:14px">Nog geen categorie\xebn geoefend.</p>';
+
+  body.innerHTML = html;
+  document.getElementById('detail-modal').classList.add('open');
+}
+
+function closeDetail() {
+  document.getElementById('detail-modal').classList.remove('open');
+}
+
+// ── Referral polling & notifications ─────────────────────────
+let seenReferralIds = new Set();
+let seenReferralIdsInit = false;
+let referralNotifTimer = null;
+
+function updateReferralBadge(rows) {
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    if (btn.dataset.tab === 'doorverwijzingen') {
+      const old = btn.querySelector('.ref-badge');
+      if (old) old.remove();
+      if (rows.length > 0) {
+        const b = document.createElement('span');
+        b.className = 'ref-badge';
+        b.style.cssText = 'background:#FF3B30;color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:6px;font-weight:700;';
+        b.textContent = rows.length;
+        btn.appendChild(b);
+      }
+    }
+  });
+}
+
+function initReferralPolling() {
+  apiFetch('/api/admin/referrals').then(rows => {
+    (rows || []).forEach(r => seenReferralIds.add(r.id));
+    seenReferralIdsInit = true;
+    updateReferralBadge(rows || []);
+  });
+  setInterval(async () => {
+    if (!seenReferralIdsInit) return;
+    const rows = await apiFetch('/api/admin/referrals');
+    if (!rows) return;
+    const newOnes = rows.filter(r => !seenReferralIds.has(r.id));
+    newOnes.forEach(r => seenReferralIds.add(r.id));
+    updateReferralBadge(rows);
+    if (newOnes.length > 0) showReferralNotif(newOnes[0]);
+    if (document.getElementById('tab-doorverwijzingen').classList.contains('active')) loadReferrals();
+  }, 30000);
+}
+
+function showReferralNotif(r) {
+  document.getElementById('rn-name').textContent  = r.friend_name;
+  document.getElementById('rn-phone').textContent = r.friend_info || '(geen telefoonnummer)';
+  document.getElementById('rn-from').textContent  = 'Voorgesteld door ' + r.referrer_name;
+  document.getElementById('referral-notif').classList.add('visible');
+  clearTimeout(referralNotifTimer);
+  referralNotifTimer = setTimeout(closeReferralNotif, 12000);
+}
+
+function closeReferralNotif() {
+  document.getElementById('referral-notif').classList.remove('visible');
+}
+
+function goToDoorverwijzingen() {
+  closeReferralNotif();
+  switchTab('doorverwijzingen');
+}
+
 </script>
 </body>
 </html>
