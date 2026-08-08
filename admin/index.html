@@ -133,6 +133,42 @@
     .user-card { flex-direction: column; align-items: flex-start; }
     .link-box { max-width: 100%; width: 100%; }
   }
+
+  /* ── Tabs ─────────────────────────────────────────────────── */
+  .tab-nav { display: flex; gap: 4px; padding: 16px 20px 0; border-bottom: 1px solid var(--border); background: var(--card); position: sticky; top: 0; z-index: 10; }
+  .tab-btn { padding: 10px 20px; border: none; background: none; font-size: 14px; font-weight: 600; color: var(--sub); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color .15s, border-color .15s; border-radius: 0; }
+  .tab-btn.active { color: var(--blue); border-bottom-color: var(--blue); }
+  .tab-pane { display: none; }
+  .tab-pane.active { display: block; }
+  /* ── Analytics ───────────────────────────────────────────── */
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr)); gap: 12px; margin-bottom: 20px; }
+  .stat-card { background: var(--card); border-radius: 14px; padding: 16px 18px; }
+  .stat-card .stat-val { font-size: 28px; font-weight: 700; color: var(--text); line-height: 1; }
+  .stat-card .stat-lbl { font-size: 12px; color: var(--sub); margin-top: 4px; font-weight: 500; }
+  .analytics-card { background: var(--card); border-radius: 14px; padding: 18px 20px; margin-bottom: 16px; }
+  .analytics-card h3 { font-size: 14px; font-weight: 700; color: var(--sub); text-transform: uppercase; letter-spacing: .5px; margin: 0 0 14px; }
+  .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 13px; }
+  .bar-row .bar-label { width: 60px; color: var(--sub); text-align: right; flex-shrink: 0; font-size: 12px; }
+  .bar-row .bar-wrap { flex: 1; height: 10px; background: #F2F2F7; border-radius: 5px; overflow: hidden; }
+  .bar-row .bar-fill { height: 100%; border-radius: 5px; background: var(--blue); transition: width .5s; }
+  .bar-row .bar-fill.green { background: var(--green); }
+  .bar-row .bar-val { width: 40px; color: var(--text); font-weight: 600; font-size: 12px; }
+  .user-analytics-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .user-analytics-row:last-child { border-bottom: none; }
+  .uar-name { flex: 1; font-weight: 600; color: var(--text); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .uar-prog { width: 90px; }
+  .uar-prog-wrap { height: 6px; background: #F2F2F7; border-radius: 3px; overflow: hidden; margin-bottom: 2px; }
+  .uar-prog-fill { height: 100%; border-radius: 3px; background: var(--blue); }
+  .uar-prog-pct { font-size: 11px; color: var(--sub); }
+  .uar-vragen { width: 60px; text-align: right; color: var(--sub); }
+  .uar-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .activity-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 8px; }
+  .act-day { text-align: center; }
+  .act-day .act-label { font-size: 10px; color: var(--sub); margin-bottom: 3px; }
+  .act-day .act-bar-wrap { height: 60px; display: flex; align-items: flex-end; justify-content: center; }
+  .act-day .act-bar { width: 70%; border-radius: 4px 4px 0 0; background: var(--blue); min-height: 3px; transition: height .5s; }
+  .act-day .act-count { font-size: 11px; color: var(--text); font-weight: 600; margin-top: 3px; }
+
 </style>
 </head>
 <body>
@@ -160,7 +196,15 @@
     </div>
   </header>
 
+  <!-- Tab nav -->
+  <div class="tab-nav">
+    <button class="tab-btn active" onclick="switchTab('deelnemers')">👥 Deelnemers</button>
+    <button class="tab-btn" onclick="switchTab('analytics')">📊 Analytics</button>
+  </div>
+
   <main>
+  <!-- ── TAB: Deelnemers ──────────────────────────────────── -->
+  <div id="tab-deelnemers" class="tab-pane active" style="padding:0">
     <!-- Toevoegen -->
     <div class="add-card">
       <h2>Nieuwe deelnemer toevoegen</h2>
@@ -200,6 +244,41 @@
         <input type="file" accept=".pdf" onchange="uploadPDF(this,'1779111984-kv2-cheat-sheet-oefenbijlage-v3.pdf')">
       </div>
     </div>
+  </div><!-- /tab-deelnemers -->
+
+  <!-- ── TAB: Analytics ─────────────────────────────────────── -->
+  <div id="tab-analytics" class="tab-pane" style="padding:20px">
+
+    <!-- Summary cards -->
+    <div class="stat-grid" id="stat-grid">
+      <div class="stat-card"><div class="stat-val" id="s-total">—</div><div class="stat-lbl">Deelnemers</div></div>
+      <div class="stat-card"><div class="stat-val" id="s-active" style="color:var(--green)">—</div><div class="stat-lbl">Actief (7 dgn)</div></div>
+      <div class="stat-card"><div class="stat-val" id="s-vragen">—</div><div class="stat-lbl">Vragen beantwoord</div></div>
+      <div class="stat-card"><div class="stat-val" id="s-correct" style="color:var(--green)">—</div><div class="stat-lbl">Score gem.</div></div>
+      <div class="stat-card"><div class="stat-val" id="s-expiring" style="color:var(--orange)">—</div><div class="stat-lbl">Verloopt binnenkort</div></div>
+    </div>
+
+    <!-- Activiteit laatste 7 dagen -->
+    <div class="analytics-card">
+      <h3>Activiteit afgelopen 7 dagen</h3>
+      <div class="activity-grid" id="activity-chart"></div>
+    </div>
+
+    <!-- Voortgang per gebruiker -->
+    <div class="analytics-card">
+      <h3>Voortgang per deelnemer</h3>
+      <div id="user-progress-list"></div>
+    </div>
+
+    <!-- Top categorieën -->
+    <div class="analytics-card">
+      <h3>Meest geoefende categorieën</h3>
+      <div id="cat-chart"></div>
+    </div>
+
+  </div><!-- /tab-analytics -->
+
+  </div><!-- /tab-pane wrapper -->
   </main>
 </div>
 
@@ -560,6 +639,107 @@ function showToast(msg) {
 
 function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,'&#39;');
+}
+
+
+// ── Tab switching ─────────────────────────────────────────────
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    if (b.textContent.toLowerCase().includes(tab === 'deelnemers' ? 'deelnemer' : 'analytics')) {
+      b.classList.add('active');
+    }
+  });
+  if (tab === 'analytics') loadAnalytics();
+}
+
+// ── Analytics laden ───────────────────────────────────────────
+async function loadAnalytics() {
+  try {
+    const d = await api('GET', '/api/admin/stats');
+
+    // Summary
+    document.getElementById('s-total').textContent = d.summary.total;
+    document.getElementById('s-active').textContent = d.summary.active_this_week;
+    document.getElementById('s-vragen').textContent = d.summary.total_vragen.toLocaleString('nl');
+    const pct = d.summary.total_vragen > 0
+      ? Math.round(d.summary.total_correct / d.summary.total_vragen * 100)
+      : 0;
+    document.getElementById('s-correct').textContent = pct + '%';
+    document.getElementById('s-expiring').textContent = d.summary.expiring_soon;
+
+    // Activiteit laatste 7 dagen
+    const DNAMES = ['zo','ma','di','wo','do','vr','za'];
+    const actEl = document.getElementById('activity-chart');
+    actEl.innerHTML = '';
+    const days = [];
+    const maxAct = Math.max(1, ...Object.values(d.dag_activity));
+    for (let i = 6; i >= 0; i--) {
+      const dt = new Date(Date.now() - i * 86400000);
+      const key = dt.toISOString().slice(0, 10);
+      const count = d.dag_activity[key] || 0;
+      const dayName = DNAMES[dt.getDay()];
+      const barH = Math.round((count / maxAct) * 56);
+      actEl.innerHTML += '<div class="act-day">' +
+        '<div class="act-label">' + dayName + '</div>' +
+        '<div class="act-bar-wrap"><div class="act-bar" style="height:' + Math.max(3, barH) + 'px"></div></div>' +
+        '<div class="act-count">' + (count || '') + '</div>' +
+        '</div>';
+    }
+
+    // Voortgang per gebruiker
+    const upEl = document.getElementById('user-progress-list');
+    upEl.innerHTML = '';
+    const sorted = d.users.sort((a, b) => b.voortgang_pct - a.voortgang_pct);
+    for (const u of sorted) {
+      const isActive = u.last_sync && (Date.now() - new Date(u.last_sync).getTime()) < 7 * 86400000;
+      const dotColor = u.blocked ? '#FF3B30' : isActive ? '#34C759' : '#C7C7CC';
+      const sinceTxt = u.last_sync
+        ? relTime(u.last_sync)
+        : 'nooit';
+      const barColor = u.voortgang_pct > 70 ? '#34C759' : u.voortgang_pct > 40 ? '#007AFF' : '#C7C7CC';
+      upEl.innerHTML += '<div class="user-analytics-row">' +
+        '<div class="uar-dot" style="background:' + dotColor + '"></div>' +
+        '<div class="uar-name" title="' + esc(u.name) + '">' + esc(u.name) + '</div>' +
+        '<div class="uar-prog">' +
+          '<div class="uar-prog-wrap"><div class="uar-prog-fill" style="width:' + u.voortgang_pct + '%;background:' + barColor + '"></div></div>' +
+          '<div class="uar-prog-pct">' + u.voortgang_pct + '% · ' + sinceTxt + '</div>' +
+        '</div>' +
+        '<div class="uar-vragen">' + (u.vragen_beantwoord || 0) + ' vr</div>' +
+      '</div>';
+    }
+    if (sorted.length === 0) upEl.innerHTML = '<p style="color:var(--sub);font-size:13px">Nog geen voortgang gesynchroniseerd.</p>';
+
+    // Top categorieën
+    const catEl = document.getElementById('cat-chart');
+    catEl.innerHTML = '';
+    const maxCat = Math.max(1, ...d.top_cats.map(c => c.total));
+    for (const c of d.top_cats) {
+      const scorePct = c.total > 0 ? Math.round(c.correct / c.total * 100) : 0;
+      catEl.innerHTML += '<div class="bar-row">' +
+        '<div class="bar-label">' + esc(c.cat) + '</div>' +
+        '<div class="bar-wrap"><div class="bar-fill" style="width:' + Math.round(c.total / maxCat * 100) + '%"></div></div>' +
+        '<div class="bar-val">' + c.total + '</div>' +
+      '</div>';
+    }
+    if (d.top_cats.length === 0) catEl.innerHTML = '<p style="color:var(--sub);font-size:13px">Nog geen categoriedata.</p>';
+
+  } catch(e) {
+    console.error('Analytics fout:', e);
+  }
+}
+
+function relTime(dateStr) {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const h = Math.floor(diff / 3600000);
+  if (h < 1) return 'zojuist';
+  if (h < 24) return h + 'u geleden';
+  const d = Math.floor(h / 24);
+  if (d === 1) return 'gisteren';
+  if (d < 7) return d + ' dgn geleden';
+  return Math.floor(d / 7) + ' wkn geleden';
 }
 
 // ── Auto-login via sessionStorage ─────────────────────────────

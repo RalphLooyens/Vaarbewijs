@@ -197,6 +197,109 @@ app.post('/api/admin/upload-pdf', requireAdmin, express.json({ limit: '25mb' }),
 });
 
 
+// ── Admin: analytics stats ────────────────────────────────────
+app.get('/api/admin/stats', requireAdmin, (req, res) => {
+  const now = Date.now();
+  const week_ago = new Date(now - 7 * 86400000).toISOString();
+
+  const users = db.prepare(`
+    SELECT u.code, u.name, u.created_at, u.expires_at, u.blocked,
+           p.data AS progress_data, p.updated_at AS last_sync
+    FROM link_users u
+    LEFT JOIN link_progress p ON u.code = p.code
+  `).all();
+
+  let totalVragen = 0, totalCorrect = 0;
+  const catScores = {}; // catId -> {correct, total}
+  const dagActivity = {}; // dateStr -> aantal gebruikers actief
+  let activeThisWeek = 0;
+  let expiringSoon = 0;
+  const userStats = [];
+
+  for (const u of users) {
+    const expiresAt = new Date(u.expires_at).getTime();
+    const daysLeft = Math.floor((expiresAt - now) / 86400000);
+    if (daysLeft >= 0 && daysLeft <= 14) expiringSoon++;
+
+    let userVragen = 0, userCorrect = 0, voortgangPct = 0;
+    let lastActive = u.last_sync || u.created_at;
+
+    if (u.progress_data) {
+      try {
+        const d = JSON.parse(u.progress_data);
+        // correct per category
+        if (d.correct) {
+          for (const [cat, cnt] of Object.entries(d.correct)) {
+            userCorrect += cnt;
+            if (!catScores[cat]) catScores[cat] = { correct: 0, total: 0 };
+            catScores[cat].correct += cnt;
+          }
+        }
+        // fouten per category
+        if (d.fouten) {
+          for (const [cat, qs] of Object.entries(d.fouten)) {
+            const foutCount = Object.keys(qs).length;
+            if (!catScores[cat]) catScores[cat] = { correct: 0, total: 0 };
+            catScores[cat].total += foutCount;
+            userVragen += foutCount;
+          }
+        }
+        // voortgang
+        if (d.voortgang) {
+          const vals = Object.values(d.voortgang).filter(v => v > 0);
+          voortgangPct = vals.length ? Math.round(vals.reduce((a,b) => a+b, 0) / vals.length) : 0;
+        }
+        // dagStats
+        if (d.dagStats) {
+          for (const [dag, stats] of Object.entries(d.dagStats)) {
+            if (!dagActivity[dag]) dagActivity[dag] = 0;
+            if ((stats.vragen || 0) > 0) dagActivity[dag]++;
+          }
+        }
+      } catch(e) {}
+    }
+
+    userVragen += userCorrect;
+    totalVragen += userVragen;
+    totalCorrect += userCorrect;
+
+    if (u.last_sync && u.last_sync >= week_ago) activeThisWeek++;
+
+    userStats.push({
+      code: u.code,
+      name: u.name,
+      created_at: u.created_at,
+      days_left: daysLeft,
+      blocked: u.blocked,
+      last_sync: u.last_sync,
+      voortgang_pct: voortgangPct,
+      vragen_beantwoord: userVragen,
+      correct: userCorrect
+    });
+  }
+
+  // Top categorieën
+  const topCats = Object.entries(catScores)
+    .map(([cat, s]) => ({ cat, correct: s.correct, total: s.correct + s.total }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 15);
+
+  res.json({
+    summary: {
+      total: users.length,
+      active_this_week: activeThisWeek,
+      blocked: users.filter(u => u.blocked).length,
+      expiring_soon: expiringSoon,
+      total_vragen: totalVragen,
+      total_correct: totalCorrect
+    },
+    users: userStats.sort((a, b) => (b.last_sync || '').localeCompare(a.last_sync || '')),
+    top_cats: topCats,
+    dag_activity: dagActivity
+  });
+});
+
+
 app.listen(PORT, () => {
   console.log(`\n🚢 Vaarbewijs server op http://localhost:${PORT}`);
   console.log(`   Quiz:  http://localhost:${PORT}/quiz`);
