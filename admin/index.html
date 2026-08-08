@@ -65,6 +65,14 @@
     background: var(--card); border-radius: 16px; padding: 24px;
     margin-bottom: 24px; box-shadow: 0 1px 8px rgba(0,0,0,0.05);
   }
+  .referral-card { display:flex; justify-content:space-between; align-items:center; padding:14px 16px; border-bottom:1px solid #F2F2F7; gap:12px; }
+  .referral-card:last-child { border-bottom:none; }
+  .referral-name { font-size:15px; font-weight:600; color:#1C1C1E; }
+  .referral-meta { font-size:12px; color:#8E8E93; margin-top:2px; }
+  .btn-green { background:#34C759; color:#fff; }
+  .btn-green:hover { background:#2DB34A; }
+  .btn-red { background:#FF3B30; color:#fff; }
+  .btn-red:hover { background:#E0352B; }
   .add-card h2 { font-size: 17px; font-weight: 700; margin-bottom: 16px; }
   .form-row { display: flex; gap: 10px; flex-wrap: wrap; }
   .form-row input, .form-row select {
@@ -198,8 +206,9 @@
 
   <!-- Tab nav -->
   <div class="tab-nav">
-    <button class="tab-btn active" onclick="switchTab('deelnemers')">👥 Deelnemers</button>
-    <button class="tab-btn" onclick="switchTab('analytics')">📊 Analytics</button>
+    <button class="tab-btn active" data-tab="deelnemers" onclick="switchTab('deelnemers')">👥 Deelnemers</button>
+    <button class="tab-btn" data-tab="analytics" onclick="switchTab('analytics')">📊 Analytics</button>
+    <button class="tab-btn" data-tab="doorverwijzingen" onclick="switchTab('doorverwijzingen')">🤝 Doorverwijzingen</button>
   </div>
 
   <main>
@@ -277,6 +286,18 @@
     </div>
 
   </div><!-- /tab-analytics -->
+  <!-- ── TAB: Doorverwijzingen ─────────────────────────────────────── -->
+  <div id="tab-doorverwijzingen" class="tab-pane" style="padding:20px">
+    <div class="add-card" style="margin-bottom:20px">
+      <h2>🤝 Doorverwijzingen</h2>
+      <p style="font-size:13px;color:#6e6e73;margin:0">Deelnemers kunnen vrienden voorstellen. Hieronder zie je aanvragen — klik "+ Voeg toe" om direct een link aan te maken voor die persoon.</p>
+    </div>
+    <div id="referral-list">
+      <div class="empty-state"><p>Laden…</p></div>
+    </div>
+  </div><!-- /tab-doorverwijzingen -->
+
+
 
   </div><!-- /tab-pane wrapper -->
   </main>
@@ -439,40 +460,7 @@ async function addUser() {
   // Kopieer link automatisch
   navigator.clipboard.writeText(link).catch(() => {});
   await loadUsers();
-loadReferrals();
-
-async function loadReferrals() {
-  const rows = await apiFetch('/api/admin/referrals');
-  const el = document.getElementById('referral-list');
-  if (!rows || rows.length === 0) {
-    el.innerHTML = '<p style="color:#8E8E93;font-size:14px">Geen doorverwijzingen.</p>';
-    return;
-  }
-  el.innerHTML = rows.map(r => {
-    const date = new Date(r.created_at + 'Z').toLocaleDateString('nl-BE', {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'});
-    return `<div class="referral-card">
-      <div class="referral-info">
-        <div class="referral-name">${esc(r.friend_name)}</div>
-        <div class="referral-meta">Voorgesteld door ${esc(r.referrer_name)}${r.friend_info ? ' · ' + esc(r.friend_info) : ''} · ${date}</div>
-      </div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <button class="btn btn-sm btn-green" onclick="addFromReferral('${esc(r.friend_name)}')">+ Voeg toe</button>
-        <button class="btn btn-sm btn-red" onclick="deleteReferral(${r.id})">✕</button>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-async function deleteReferral(id) {
-  await apiFetch('/api/admin/referrals/' + id, { method: 'DELETE' });
-  loadReferrals();
-}
-
-function addFromReferral(name) {
-  document.getElementById('new-name').value = name;
-  document.getElementById('new-name').focus();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-}
+  await loadReferrals();
   alert('✅ ' + name + ' toegevoegd!\n\nDe persoonlijke link is gekopieerd naar je klembord:\n' + link);
 }
 
@@ -485,81 +473,14 @@ async function toggleBlock(code, name, currentlyBlocked) {
     method: 'PATCH',
     body: JSON.stringify({ blocked: block })
   });
-  if (res) loadUsers();
-loadReferrals();
-
-async function loadReferrals() {
-  const rows = await apiFetch('/api/admin/referrals');
-  const el = document.getElementById('referral-list');
-  if (!rows || rows.length === 0) {
-    el.innerHTML = '<p style="color:#8E8E93;font-size:14px">Geen doorverwijzingen.</p>';
-    return;
-  }
-  el.innerHTML = rows.map(r => {
-    const date = new Date(r.created_at + 'Z').toLocaleDateString('nl-BE', {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'});
-    return `<div class="referral-card">
-      <div class="referral-info">
-        <div class="referral-name">${esc(r.friend_name)}</div>
-        <div class="referral-meta">Voorgesteld door ${esc(r.referrer_name)}${r.friend_info ? ' · ' + esc(r.friend_info) : ''} · ${date}</div>
-      </div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <button class="btn btn-sm btn-green" onclick="addFromReferral('${esc(r.friend_name)}')">+ Voeg toe</button>
-        <button class="btn btn-sm btn-red" onclick="deleteReferral(${r.id})">✕</button>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-async function deleteReferral(id) {
-  await apiFetch('/api/admin/referrals/' + id, { method: 'DELETE' });
-  loadReferrals();
-}
-
-function addFromReferral(name) {
-  document.getElementById('new-name').value = name;
-  document.getElementById('new-name').focus();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-}
+  if (res) { await loadUsers(); await loadReferrals(); }
 }
 
 async function deleteUser(code, name) {
   if (!confirm('Verwijder ' + name + '?\n\nDe link wordt ongeldig en de voortgang wordt gewist.')) return;
   await api('DELETE', '/api/admin/users/' + code);
   await loadUsers();
-loadReferrals();
-
-async function loadReferrals() {
-  const rows = await apiFetch('/api/admin/referrals');
-  const el = document.getElementById('referral-list');
-  if (!rows || rows.length === 0) {
-    el.innerHTML = '<p style="color:#8E8E93;font-size:14px">Geen doorverwijzingen.</p>';
-    return;
-  }
-  el.innerHTML = rows.map(r => {
-    const date = new Date(r.created_at + 'Z').toLocaleDateString('nl-BE', {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'});
-    return `<div class="referral-card">
-      <div class="referral-info">
-        <div class="referral-name">${esc(r.friend_name)}</div>
-        <div class="referral-meta">Voorgesteld door ${esc(r.referrer_name)}${r.friend_info ? ' · ' + esc(r.friend_info) : ''} · ${date}</div>
-      </div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <button class="btn btn-sm btn-green" onclick="addFromReferral('${esc(r.friend_name)}')">+ Voeg toe</button>
-        <button class="btn btn-sm btn-red" onclick="deleteReferral(${r.id})">✕</button>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-async function deleteReferral(id) {
-  await apiFetch('/api/admin/referrals/' + id, { method: 'DELETE' });
-  loadReferrals();
-}
-
-function addFromReferral(name) {
-  document.getElementById('new-name').value = name;
-  document.getElementById('new-name').focus();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-}
+  await loadReferrals();
 }
 
 // ── Link verlengen ────────────────────────────────────────────
@@ -578,11 +499,16 @@ async function confirmExtend() {
   closeExtend();
   if (res.ok) {
     await loadUsers();
-loadReferrals();
+    await loadReferrals();
+    alert('✅ Link verlengd — nu nog ' + res.days_left + ' dagen geldig.');
+  }
+}
 
+// ── Doorverwijzingen ─────────────────────────────────────────────────────────
 async function loadReferrals() {
-  const rows = await apiFetch('/api/admin/referrals');
   const el = document.getElementById('referral-list');
+  if (!el) return;
+  const rows = await apiFetch('/api/admin/referrals');
   if (!rows || rows.length === 0) {
     el.innerHTML = '<p style="color:#8E8E93;font-size:14px">Geen doorverwijzingen.</p>';
     return;
@@ -603,17 +529,15 @@ async function loadReferrals() {
 }
 
 async function deleteReferral(id) {
+  if (!confirm('Doorverwijzing verwijderen?')) return;
   await apiFetch('/api/admin/referrals/' + id, { method: 'DELETE' });
-  loadReferrals();
+  await loadReferrals();
 }
 
 function addFromReferral(name) {
   document.getElementById('new-name').value = name;
-  document.getElementById('new-name').focus();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-    alert('✅ Link verlengd — nu nog ' + res.days_left + ' dagen geldig.');
-  }
+  switchTab('deelnemers');
+  setTimeout(() => document.getElementById('new-name').focus(), 100);
 }
 
 // ── Hulpfuncties ──────────────────────────────────────────────
@@ -648,11 +572,10 @@ function switchTab(tab) {
   document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
   document.getElementById('tab-' + tab).classList.add('active');
   document.querySelectorAll('.tab-btn').forEach(b => {
-    if (b.textContent.toLowerCase().includes(tab === 'deelnemers' ? 'deelnemer' : 'analytics')) {
-      b.classList.add('active');
-    }
+    if (b.dataset.tab === tab) b.classList.add('active');
   });
   if (tab === 'analytics') loadAnalytics();
+  if (tab === 'doorverwijzingen') loadReferrals();
 }
 
 // ── Analytics laden ───────────────────────────────────────────
