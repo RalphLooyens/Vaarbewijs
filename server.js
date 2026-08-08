@@ -4,7 +4,11 @@ const fs      = require('fs');
 const path    = require('path');
 const db      = require('./db/database');
 
+const compression   = require('compression');
 const app           = express();
+
+// ── Gzip-compressie ───────────────────────────────────────────
+app.use(compression());
 const PORT          = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 
