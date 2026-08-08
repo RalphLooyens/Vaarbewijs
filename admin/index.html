@@ -33,7 +33,9 @@
     outline: none; transition: border-color .2s;
   }
   .login-box input:focus { border-color: var(--blue); }
-  .login-box .err { color: var(--red); font-size: 14px; margin-bottom: 10px; display: none; }
+  .login-box .err { color: #C0392B; font-size: 15px; font-weight: 700; margin-bottom: 10px; display: none;
+    background: #FFF0EF; border: 1.5px solid #FFBBBB; border-radius: 10px; padding: 10px 14px; }
+  .login-box input.err-input { border-color: var(--red) !important; }
   .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px;
          padding: 12px 20px; border-radius: 12px; font-size: 15px; font-weight: 600;
          cursor: pointer; border: none; transition: opacity .15s, transform .1s; }
@@ -141,9 +143,9 @@
     <div class="login-logo">⚓</div>
     <h1>Vaarbewijs Beheer</h1>
     <p>Voer het beheerderswachtwoord in</p>
-    <div class="err" id="login-err">Onjuist wachtwoord.</div>
+    <div class="err" id="login-err">❌ Onjuist wachtwoord.</div>
     <input type="password" id="login-pw" placeholder="Wachtwoord"
-           onkeydown="if(event.key==='Enter')doLogin()">
+           onkeydown="if(event.key==='Enter')doLogin()" oninput="document.getElementById('login-err').style.display='none';this.classList.remove('err-input')">
     <button class="btn btn-primary" onclick="doLogin()">Inloggen</button>
   </div>
 </div>
@@ -227,13 +229,28 @@ let extendCode = '';
 
 // ── Auth ─────────────────────────────────────────────────────
 async function doLogin() {
-  const pw = document.getElementById('login-pw').value.trim();
+  const pwEl = document.getElementById('login-pw');
+  const errEl = document.getElementById('login-err');
+  const pw = pwEl.value.trim();
   if (!pw) return;
-  const res = await fetch(BASE + '/api/admin/users', {
-    headers: { 'x-admin-key': pw }
-  });
+  errEl.style.display = 'none';
+  pwEl.classList.remove('err-input');
+  let res;
+  try {
+    res = await fetch(BASE + '/api/admin/users', {
+      headers: { 'x-admin-key': pw }
+    });
+  } catch(e) {
+    errEl.textContent = '❌ Geen verbinding met server.';
+    errEl.style.display = 'block';
+    pwEl.classList.add('err-input');
+    return;
+  }
   if (res.status === 401) {
-    document.getElementById('login-err').style.display = 'block';
+    errEl.textContent = '❌ Onjuist wachtwoord.';
+    errEl.style.display = 'block';
+    pwEl.classList.add('err-input');
+    pwEl.select();
     return;
   }
   adminKey = pw;
