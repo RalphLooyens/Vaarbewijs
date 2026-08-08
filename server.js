@@ -5,7 +5,9 @@ const path    = require('path');
 const db      = require('./db/database');
 
 const compression   = require('compression');
+const jwt           = require('jsonwebtoken');
 const app           = express();
+const JWT_SECRET    = process.env.JWT_SECRET || process.env.ADMIN_PASSWORD || 'vb_default_secret';
 
 // ── Gzip-compressie ───────────────────────────────────────────
 app.use(compression());
@@ -25,17 +27,33 @@ app.get('/admin/*', (req, res) => res.sendFile(path.join(__dirname, 'admin', 'in
 app.get('/',  (req, res) => res.redirect('/quiz'));
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
 
-// ── Gebruiker ophalen via code ────────────────────────────────
+// ── Gebruiker ophalen via code (JWT of legacy short code) ────────────────────────────────
 app.get('/api/user/:code', (req, res) => {
-  const user = db.prepare(`
-    SELECT code, name, expires_at FROM link_users WHERE code = ?
-  `).get(req.params.code);
+  const code = req.params.code;
 
+  // JWT-token: bevat naam + verloopdatum — werkt ook na database-reset
+  if (code.includes('.')) {
+    try {
+      const payload = jwt.verify(code, JWT_SECRET);
+      // Controleer blocklist (best-effort, mag falen als DB leeg is)
+      try {
+        const dbUser = db.prepare('SELECT blocked FROM link_users WHERE code = ?').get(code);
+        if (dbUser && dbUser.blocked) return res.status(403).json({ error: 'Link geblokkeerd', name: payload.name });
+      } catch(e) {}
+      const days_left = Math.floor((payload.exp * 1000 - Date.now()) / 86400000);
+      return res.json({ code, name: payload.name, expires_at: new Date(payload.exp * 1000).toISOString(), days_left });
+    } catch(e) {
+      if (e.name === 'TokenExpiredError') return res.status(410).json({ error: 'Link verlopen', expired: true, name: '' });
+      return res.status(404).json({ error: 'Ongeldige link' });
+    }
+  }
+
+  // Legacy: korte code → database opzoeken
+  const user = db.prepare('SELECT code, name, expires_at, blocked FROM link_users WHERE code = ?').get(code);
   if (!user) return res.status(404).json({ error: 'Niet gevonden' });
   if (user.blocked) return res.status(403).json({ error: 'Link geblokkeerd', blocked: true, name: user.name });
   const days_left = Math.floor((new Date(user.expires_at).getTime() - Date.now()) / 86400000);
   if (days_left < 0) return res.status(410).json({ error: 'Link verlopen', expired: true, name: user.name });
-
   res.json({ ...user, days_left });
 });
 
@@ -44,10 +62,15 @@ app.post('/api/sync', (req, res) => {
   const { code, data } = req.body;
   if (!code || !data) return res.status(400).json({ error: 'code en data vereist' });
 
-  const user = db.prepare(
-    "SELECT code FROM link_users WHERE code = ? AND expires_at > datetime('now')"
-  ).get(code);
-  if (!user) return res.status(404).json({ error: 'Gebruiker niet gevonden of link verlopen' });
+  // JWT tokens zijn altijd geldig als ze niet verlopen zijn; korte codes via DB
+  let validUser = true;
+  if (!code.includes('.')) {
+    const dbUser = db.prepare("SELECT code FROM link_users WHERE code = ? AND expires_at > datetime('now')").get(code);
+    if (!dbUser) validUser = false;
+  } else {
+    try { jwt.verify(code, JWT_SECRET); } catch(e) { validUser = false; }
+  }
+  if (!validUser) return res.status(404).json({ error: 'Gebruiker niet gevonden of link verlopen' });
 
   db.prepare(`
     INSERT INTO link_progress (code, data, updated_at) VALUES (?, ?, datetime('now'))
@@ -94,14 +117,18 @@ app.post('/api/admin/users', requireAdmin, (req, res) => {
   if (!name || !name.trim()) return res.status(400).json({ error: 'Naam vereist' });
 
   const validDays = Math.min(Math.max(parseInt(days) || 90, 1), 730);
-  const code = generateCode();
+  const trimmedName = name.trim();
 
-  db.prepare(`
-    INSERT INTO link_users (code, name, expires_at)
-    VALUES (?, ?, datetime('now', '+' || ? || ' days'))
-  `).run(code, name.trim(), validDays);
+  // Genereer JWT-token: naam zit in de token, werkt ook na database-reset
+  const code = jwt.sign({ name: trimmedName }, JWT_SECRET, { expiresIn: validDays * 24 * 60 * 60 });
+  const expiresAt = new Date(Date.now() + validDays * 86400000).toISOString();
 
-  res.json({ code, name: name.trim(), days: validDays });
+  // Sla ook op in DB voor admin-overzicht en blokkeer-functie (best-effort)
+  try {
+    db.prepare(`INSERT INTO link_users (code, name, expires_at) VALUES (?, ?, ?)`).run(code, trimmedName, expiresAt);
+  } catch(e) {}
+
+  res.json({ code, name: trimmedName, days: validDays });
 });
 
 // ── Admin: link verlengen ─────────────────────────────────────
