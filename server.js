@@ -24,7 +24,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.get('/quiz', (req, res) => res.sendFile(path.join(__dirname, 'public', 'quiz.html')));
 app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'admin', 'index.html')));
 app.get('/admin/*', (req, res) => res.sendFile(path.join(__dirname, 'admin', 'index.html')));
-app.get('/',  (req, res) => res.redirect('/quiz'));
+app.get('/', (req, res) => { const qs = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''; res.redirect('/quiz' + qs); });
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
 
 // ── Gebruiker ophalen via code (JWT of legacy short code) ────────────────────────────────
