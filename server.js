@@ -21,7 +21,69 @@ app.use('/admin', express.static(path.join(__dirname, 'admin')));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ── Hoofd-routes ──────────────────────────────────────────────
-app.get('/quiz', (req, res) => res.sendFile(path.join(__dirname, 'public', 'quiz.html')));
+app.get('/quiz', (req, res) => {
+  // Als ?u= aanwezig is maar GEEN ?_c=1: stuur eerst een mini auth-pagina (2KB)
+  // die de server wakker houdt en automatisch retry doet. Pas daarna laadt de quiz (5MB).
+  if (req.query.u && !req.query._c) {
+    const token = req.query.u;
+    const splash = `<!DOCTYPE html><html><head>
+<meta charset="utf-8"><title>Vaarbewijs</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#f2f2f7;font-family:-apple-system,BlinkMacSystemFont,sans-serif;
+     display:flex;align-items:center;justify-content:center;min-height:100vh}
+.card{background:#fff;border-radius:20px;padding:32px 24px;max-width:320px;width:90%;
+      text-align:center;box-shadow:0 2px 20px rgba(0,0,0,.07)}
+.icon{font-size:36px;margin-bottom:14px}
+h2{font-size:17px;font-weight:700;color:#1C1C1E;margin-bottom:8px}
+p{font-size:13px;color:#8E8E93;line-height:1.5;min-height:1.5em}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#007AFF;
+     margin:16px 3px 0;animation:b 1.2s infinite both}
+.dot:nth-child(2){animation-delay:.2s}.dot:nth-child(3){animation-delay:.4s}
+@keyframes b{0%,80%,100%{opacity:.2;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}
+</style></head><body>
+<div class="card">
+  <div class="icon">&#9875;</div>
+  <h2>Vaarbewijs</h2>
+  <p id="msg">Link wordt gecontroleerd&hellip;</p>
+  <div><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+</div>
+<script>
+var code = ${JSON.stringify(token)};
+var attempts = 0;
+function check() {
+  fetch('/api/user/' + encodeURIComponent(code))
+    .then(function(r){ return r.json().then(function(d){ return {ok:r.ok, s:r.status, d:d}; }); })
+    .then(function(r) {
+      if (r.ok) {
+        // Cache opslaan zodat quiz direct inlogt zonder extra API-call
+        try { localStorage.setItem('vb_link_' + code, JSON.stringify({name:r.d.name, ts:Date.now()})); } catch(e){}
+        // Stuur door naar de echte quiz
+        window.location.replace('/quiz?u=' + encodeURIComponent(code) + '&_c=1');
+      } else {
+        var dots = document.querySelector('div:last-child');
+        if (dots) dots.style.display = 'none';
+        document.getElementById('msg').style.color = '#FF3B30';
+        document.getElementById('msg').textContent =
+          r.s === 410 ? 'Link is verlopen. Vraag een nieuwe link aan.' :
+          r.s === 403 ? 'Link is geblokkeerd. Neem contact op met de beheerder.' :
+          'Ongeldige link. Controleer de URL.';
+      }
+    })
+    .catch(function() {
+      attempts++;
+      document.getElementById('msg').textContent =
+        'Server start op… (' + attempts + 's' + (attempts === 1 ? '' : '') + ')';
+      setTimeout(check, 3000);
+    });
+}
+check();
+</script></body></html>`;
+    return res.send(splash);
+  }
+  res.sendFile(path.join(__dirname, 'public', 'quiz.html'));
+});
 app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'admin', 'index.html')));
 app.get('/admin/*', (req, res) => res.sendFile(path.join(__dirname, 'admin', 'index.html')));
 app.get('/', (req, res) => { const qs = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''; res.redirect('/quiz' + qs); });
