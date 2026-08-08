@@ -407,19 +407,23 @@ function renderUsers(users) {
       : 'Nog niet gebruikt';
     const added = new Date(u.created_at + 'Z').toLocaleDateString('nl-BE', {day:'numeric',month:'long',year:'numeric'});
     // Voortgang berekenen uit opgeslagen data
-    var cats = 0, totalCorrect = 0, totalVragen = 0;
+    var progressStr = 'Nog geen oefeningen';
     if(u.progress_data){
       try{
         var pd = typeof u.progress_data === 'string' ? JSON.parse(u.progress_data) : u.progress_data;
-        if(pd.correct){ cats = Object.keys(pd.correct).filter(function(k){ return pd.correct[k]>0; }).length; }
-        if(pd.fouten && pd.correct){
-          Object.keys(pd.correct).forEach(function(k){ totalCorrect += (pd.correct[k]||0); totalVragen += (pd.correct[k]||0) + (pd.fouten[k]||0); });
+        // fouten = {vraagKey: vraagObject} — vragen nog in oefenmodus
+        var foutCount = pd.fouten ? Object.keys(pd.fouten).length : 0;
+        // correct = {vraagKey: count} — tellingen correcte herhalingen
+        var correctAnswers = pd.correct ? Object.values(pd.correct).reduce(function(a,b){return a+(b||0);},0) : 0;
+        // voortgang = {catId: pct} — meest betrouwbare maatstaf
+        var voortgangVals = pd.voortgang ? Object.values(pd.voortgang).filter(function(v){return v>0;}) : [];
+        var catCount = voortgangVals.length;
+        var avgVoortgang = catCount ? Math.round(voortgangVals.reduce(function(a,b){return a+b;},0)/catCount) : 0;
+        if(catCount > 0){
+          progressStr = catCount + ' cat · ' + avgVoortgang + '% gem.' + (foutCount > 0 ? ' · ' + foutCount + ' te oefenen' : '');
         }
       }catch(e){}
     }
-    var progressStr = cats > 0
-      ? cats + ' categorieën · ' + totalCorrect + '/' + totalVragen + ' correct'
-      : 'Nog geen oefeningen';
 
     return `
     <div class="user-card" id="card-${u.code}">
@@ -509,6 +513,9 @@ async function loadReferrals() {
   const el = document.getElementById('referral-list');
   if (!el) return;
   const rows = await apiFetch('/api/admin/referrals');
+  // Toon badge op nav-tab
+  const tabBtns = document.querySelectorAll('.tab-btn');
+  tabBtns.forEach(function(btn){ if(btn.textContent.includes('Doorverwijzingen')){ btn.querySelector('.ref-badge') && btn.querySelector('.ref-badge').remove(); if(rows && rows.length > 0){ const b=document.createElement('span'); b.className='ref-badge'; b.style.cssText='background:#FF3B30;color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:6px;font-weight:700;'; b.textContent=rows.length; btn.appendChild(b); }}});
   if (!rows || rows.length === 0) {
     el.innerHTML = '<p style="color:#8E8E93;font-size:14px">Geen doorverwijzingen.</p>';
     return;

@@ -234,12 +234,34 @@ app.patch('/api/admin/users/:code/block', requireAdmin, (req, res) => {
 
 
 // ── Doorverwijzing (bezoeker stelt vriend voor) ───────────────
-app.post('/api/referral', (req, res) => {
+app.post('/api/referral', async (req, res) => {
   const { code, friend_name, friend_info } = req.body;
   if (!code || !friend_name) return res.status(400).json({ error: 'code en friend_name vereist' });
-  const user = db.prepare("SELECT code FROM link_users WHERE code = ? AND expires_at > datetime('now') AND blocked = 0").get(code);
+  const user = db.prepare("SELECT code, name FROM link_users WHERE code = ? AND expires_at > datetime('now') AND blocked = 0").get(code);
   if (!user) return res.status(404).json({ error: 'Ongeldige link' });
   db.prepare('INSERT INTO link_referrals (referrer_code, friend_name, friend_info) VALUES (?, ?, ?)').run(code, friend_name.trim(), friend_info || '');
+
+  // Stuur email notificatie als RESEND_API_KEY en NOTIFY_EMAIL zijn ingesteld
+  const resendKey = process.env.RESEND_API_KEY;
+  const notifyEmail = process.env.NOTIFY_EMAIL;
+  if (resendKey && notifyEmail) {
+    try {
+      await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: 'Vaarbewijs <onboarding@resend.dev>',
+          to: [notifyEmail],
+          subject: `Nieuwe doorverwijzing van ${user.name}`,
+          html: `<p><strong>${user.name}</strong> heeft een vriend voorgesteld:</p>
+                 <p>Naam: <strong>${friend_name.trim()}</strong><br>
+                 Contact: ${friend_info || '(niet ingevuld)'}</p>
+                 <p>Log in op het <a href="${process.env.SITE_URL || 'https://vaarbewijs-production.up.railway.app'}/admin">admin-panel</a> om een link aan te maken.</p>`
+        })
+      });
+    } catch(e) { /* email optioneel, stille fout */ }
+  }
+
   res.json({ ok: true });
 });
 
@@ -320,21 +342,20 @@ app.get('/api/admin/stats', requireAdmin, (req, res) => {
     if (u.progress_data) {
       try {
         const d = JSON.parse(u.progress_data);
-        // correct per category
+        // correct: {vraagKey: count} - sum of correct answer counts
         if (d.correct) {
-          for (const [cat, cnt] of Object.entries(d.correct)) {
-            userCorrect += cnt;
-            if (!catScores[cat]) catScores[cat] = { correct: 0, total: 0 };
-            catScores[cat].correct += cnt;
+          for (const [, cnt] of Object.entries(d.correct)) {
+            userCorrect += (cnt || 0);
           }
         }
-        // fouten per category
+        // fouten: {vraagKey: vraagObject} - each value is a question with .code property
         if (d.fouten) {
-          for (const [cat, qs] of Object.entries(d.fouten)) {
-            const foutCount = Object.keys(qs).length;
+          for (const [, q] of Object.entries(d.fouten)) {
+            userVragen += 1;
+            // Get category from question code e.g. "4.1.1" -> "4.1"
+            const cat = (q && q.code) ? q.code.split('.').slice(0, 2).join('.') : 'overig';
             if (!catScores[cat]) catScores[cat] = { correct: 0, total: 0 };
-            catScores[cat].total += foutCount;
-            userVragen += foutCount;
+            catScores[cat].total += 1;
           }
         }
         // voortgang
