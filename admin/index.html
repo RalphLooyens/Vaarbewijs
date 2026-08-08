@@ -777,7 +777,7 @@ async function uploadPDF(input, filename) {
     try {
       const r = await api('POST', '/api/admin/upload-pdf',
         { filename, data: base64 }
-      });
+      );
       if (r.ok) {
         statusEl.innerHTML = '<span style="color:#34C759">✅ ' + filename + ' geüpload (' + Math.round(r.bytes/1024) + ' KB)</span>';
       } else {
